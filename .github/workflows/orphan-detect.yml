@@ -1,0 +1,44 @@
+name: Orphaned image detection
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # daily at 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  detect-orphans:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run orphan detection (dry-run)
+        id: detect
+        run: |
+          node scripts/cleanup-orphaned-images.js > orphan-output.txt || true
+          echo "EOF<<EOF" >> $GITHUB_OUTPUT
+          $(cat orphan-output.txt)
+          EOF
+
+      - name: Upload orphan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orphan-output
+          path: orphan-output.txt
+
+      - name: Create issue if orphans found
+        if: ${{ contains(steps.detect.outputs['EOF<<EOF'], 'Found') }}
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: 'Orphaned images detected in public/images'
+          content-file: orphan-output.txt
+          labels: orphan, maintenance
