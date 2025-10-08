@@ -35,10 +35,39 @@ jobs:
           name: orphan-output
           path: orphan-output.txt
 
-      - name: Create issue if orphans found
+      - name: Comment on maintenance issue (or create one)
         if: ${{ contains(steps.detect.outputs['EOF<<EOF'], 'Found') }}
-        uses: peter-evans/create-issue-from-file@v5
+        uses: actions/github-script@v6
         with:
-          title: 'Orphaned images detected in public/images'
-          content-file: orphan-output.txt
-          labels: orphan, maintenance
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync('orphan-output.txt', 'utf8');
+            const title = 'Orphaned images detected in public/images';
+
+            // Try to find an open issue with the exact title
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+
+            const found = issues.find(i => i.title === title);
+            if (found) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: found.number,
+                body: `Orphan detection run (${new Date().toISOString()}):\n\n${content}`
+              });
+              core.info(`Appended comment to issue #${found.number}`);
+            } else {
+              // Create a new issue as a fallback, but indicate it's created by the workflow
+              const { data: created } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: `Orphan detection run (${new Date().toISOString()}):\n\n${content}`
+              });
+              core.info(`Created issue #${created.number}`);
+            }
