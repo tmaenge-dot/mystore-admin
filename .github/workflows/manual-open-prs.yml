@@ -1,0 +1,65 @@
+name: Manual open PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: 'Comma-separated list of head branches to open PRs for (e.g. upgrade-csurf-1.2.2,audit-fix-only)'
+        required: true
+        default: 'upgrade-csurf-1.2.2,audit-fix-only'
+      base:
+        description: 'Base branch to open PRs against'
+        required: true
+        default: 'main'
+      titlePrefix:
+        description: 'Optional title prefix'
+        required: false
+      body:
+        description: 'Optional PR body text'
+        required: false
+
+jobs:
+  create-prs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Create PRs for branches
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const inputs = github.context.payload.inputs || {};
+            const raw = (inputs.branches || '').trim();
+            if (!raw) throw new Error('No branches provided');
+            const branches = raw.split(',').map(s=>s.trim()).filter(Boolean);
+            const base = inputs.base || 'main';
+            const titlePrefix = inputs.titlePrefix ? inputs.titlePrefix.trim() + ' - ' : '';
+            const body = inputs.body || '';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            for (const branch of branches) {
+              core.info(`Processing branch: ${branch}`);
+
+              // Check for existing open PRs from this head
+              const existing = await github.rest.pulls.list({ owner, repo, head: `${owner}:${branch}`, state: 'open' });
+              if (existing.data && existing.data.length) {
+                core.info(`Open PR already exists for ${branch}: ${existing.data[0].html_url}`);
+                continue;
+              }
+
+              // Create PR
+              const title = `${titlePrefix}Changes from ${branch}`;
+              try {
+                const pr = await github.rest.pulls.create({ owner, repo, head: branch, base, title, body });
+                core.info(`Created PR: ${pr.data.html_url}`);
+              } catch (err) {
+                core.error(`Failed to create PR for ${branch}: ${err.message}`);
+                throw err;
+              }
+            }
+
+      - name: Output done
+        run: echo "Done creating PRs (if any were missing). Check Actions log for details."
