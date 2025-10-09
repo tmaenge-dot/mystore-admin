@@ -428,7 +428,8 @@ app.get('/stores/:id', (req, res) => {
 
   // per-store branding
   const brandColor = store.brandColor || '#222';
-  const logoUrl = `/images/${store.slug || id}.svg`;
+  // allow per-store explicit logo path (e.g. '/images/thuso.png') or fall back to slug-based svg
+  const logoUrl = store.logo || `/images/${store.slug || id}.svg`;
   const promo = db.getPromo(id) || { enabled: false, text: '' };
 
   // build a safe HTML string without nested template literal complexity
