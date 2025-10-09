@@ -1,0 +1,32 @@
+name: Create PR for csurf upgrade
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-pr:
+    name: Create PR from branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: upgrade-csurf-1.2.2
+          base: main
+          title: "Upgrade csurf to 1.2.2"
+          body: |
+            This PR upgrades `csurf` to 1.2.2.
+
+            See `docs/PR_DESCRIPTION.md` in this branch for full context.
+
+            Screenshot: https://raw.githubusercontent.com/tmaenge-dot/mystore-admin/upgrade-csurf-1.2.2/public/images/store_screenshot.png
+
+            Local test summary: 9 passed, 0 failed.
+          labels: |
+            dependencies
+            maintenance
+          draft: false
