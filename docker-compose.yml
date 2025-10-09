@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  mystore:
+    build: .
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./data_store:/usr/src/app/data_store
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
