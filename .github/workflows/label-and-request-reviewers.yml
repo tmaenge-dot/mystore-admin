@@ -1,0 +1,36 @@
+name: Label and Request Reviewers
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to label and request reviewers'
+        required: true
+        type: number
+      labels:
+        description: 'Comma-separated labels to add'
+        required: false
+        type: string
+      reviewers:
+        description: 'Comma-separated reviewer usernames'
+        required: false
+        type: string
+
+jobs:
+  label_and_request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add labels to PR
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          labels: ${{ github.event.inputs.labels || '' }}
+        if: ${{ github.event.inputs.labels != '' }}
+
+      - name: Request reviewers
+        uses: peter-evans/request-review@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reviewers: ${{ github.event.inputs.reviewers || '' }}
+          pull-request-number: ${{ github.event.inputs.pr_number }}
+        if: ${{ github.event.inputs.reviewers != '' }}

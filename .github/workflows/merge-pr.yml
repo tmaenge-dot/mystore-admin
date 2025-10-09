@@ -1,0 +1,27 @@
+name: Merge PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to merge'
+        required: true
+        type: number
+      merge_method:
+        description: 'merge method: merge, squash, rebase'
+        required: false
+        default: 'squash'
+
+jobs:
+  do_merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge PR via API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.inputs.pr_number }}
+          METHOD: ${{ github.event.inputs.merge_method }}
+        run: |
+          echo "Merging PR #${PR} with method ${METHOD}"
+          curl -s -S -X PUT -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO/pulls/$PR/merge -d "{\"merge_method\": \"${METHOD}\"}" | jq '.'
