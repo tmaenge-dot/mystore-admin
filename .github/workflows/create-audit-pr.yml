@@ -1,0 +1,34 @@
+name: Create Audit PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name to create PR from'
+        required: true
+        default: 'audit-fix-only'
+      title:
+        description: 'PR title'
+        required: false
+        default: 'Apply forced audit fixes (audit-fix-only)'
+      body:
+        description: 'PR body'
+        required: false
+        default: 'This PR contains changes produced by `npm audit fix --force`. Please review carefully.'
+
+jobs:
+  create_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pull request via API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.inputs.branch }}
+          TITLE: ${{ github.event.inputs.title }}
+          BODY: ${{ github.event.inputs.body }}
+        run: |
+          echo "Creating PR from ${BRANCH} to main"
+          payload=$(jq -n --arg t "$TITLE" --arg b "$BODY" --arg head "$BRANCH" '{title:$t, body:$b, head:$head, base:"main"}')
+          echo "$payload" > /tmp/pr.json
+          curl -s -S -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO/pulls -d @/tmp/pr.json | jq '.'
