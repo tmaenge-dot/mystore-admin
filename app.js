@@ -208,8 +208,7 @@ app.post('/admin/stores/:id/upload', ...uploadMiddleware, async (req, res) => {
   const file = req.file;
   let imageUrl = (req.body.imageUrl || '').trim();
   if (file){ imageUrl = '/images/' + path.basename(file.path); }
-  // debug: write upload info to data_store for test inspection (only when DEBUG_LOGS=1)
-  try{ if (process.env.DEBUG_LOGS === '1') { const dbg = path.join(process.cwd(), 'data_store', 'upload_debug.log'); fs.appendFileSync(dbg, JSON.stringify({ productId, file: file && { originalname: file.originalname, path: file && file.path } , time: new Date().toISOString() }) + '\n'); } }catch(e){}
+  // Optional upload debug logging was here; removed to reduce console/file noise.
   // If a file was uploaded, validate/process it using sharp (resize) and fail if invalid
   if (file){
     const fp = file.path;
@@ -423,6 +422,7 @@ app.get('/api/stores/:id/orders/:orderId', (req, res) => {
 // Serve a simple responsive store page (mobile-first)
 app.get('/stores/:id', (req, res) => {
   const id = req.params.id;
+  // (no debug logs)
   const store = stores.find(s => s.id === id || s.slug === id);
   if (!store) return res.status(404).send('<h1>Store not found</h1>');
 
@@ -442,15 +442,15 @@ app.get('/stores/:id', (req, res) => {
     <style>:root{--brand-color:${brandColor}}</style>
     <link rel="stylesheet" href="/styles.css">
   </head>
-  <body>
+  <body style="background: #f7faf9">
     <header class="store-header">
       <div class="hero">
         <div class="hero-inner">
-          <img class="logo" src="${logoUrl}" alt="${store.name || ''} logo" onerror="this.style.display='none'">
+          <img class="logo" src="${logoUrl}" alt="${store.name || ''} logo" onerror="this.style.visibility='hidden';this.style.pointerEvents='none'">
           <div>
             <h1>${store.name || ''}</h1>
             <p class="tag">${store.description || ''}</p>
-            <p><a class="brand-btn" href="#products" onclick="document.getElementById('q').focus();return false">Shop now</a></p>
+            <div class="hero-actions"><a class="brand-btn btn-primary" href="#products" onclick="document.getElementById('q').focus();return false">Shop now</a></div>
           </div>
         </div>
       </div>
@@ -481,25 +481,35 @@ app.get('/stores/:id', (req, res) => {
     </div>
 
     <script>
+      // Small helper to show/hide backdrops in a way that also controls visibility/pointer-events
+      function setBackdrop(id, on){
+        try{
+          var el = document.getElementById(id); if(!el) return;
+          if(on){ el.style.display = 'flex'; el.style.visibility = 'visible'; el.style.pointerEvents = 'auto'; }
+          else { el.style.display = 'none'; el.style.visibility = 'hidden'; el.style.pointerEvents = 'none'; }
+        }catch(e){}
+      }
+      // Defensive: ensure modal backdrops are hidden on initial load
+      document.addEventListener('DOMContentLoaded', function(){ try{ setBackdrop('modal-backdrop', false); setBackdrop('cart-backdrop', false); }catch(e){} });
       const storeId = ${JSON.stringify(id)};
       let products = [];
       function saveCart(c){ localStorage.setItem('cart:'+storeId, JSON.stringify(c)); }
       function loadCart(){ try{ return JSON.parse(localStorage.getItem('cart:'+storeId)) || {items:[]}; }catch(e){return {items:[]};} }
       function updateCartUI(){ var c = loadCart(); var count = c.items.reduce(function(s,i){return s + (i.qty||0);}, 0); document.getElementById('cart-count').textContent = count; }
       async function fetchProducts(){ var res = await fetch('/api/stores/' + storeId + '/products'); products = await res.json(); render(products); updateCartUI(); }
-      function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div>'+ (it.name||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div></div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
-  function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; var bulkHtml = ''; if(Array.isArray(it.bulkPricing) && it.bulkPricing.length){ bulkHtml = '<div class="bulk">'; for(var b=0;b<it.bulkPricing.length;b++){ var tier = it.bulkPricing[b]; bulkHtml += '<div class="tier">Buy '+tier.minQty+'+ @ $'+tier.price.toFixed(2)+'</div>'; } bulkHtml += '</div>'; } out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div>'+ (it.name||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div>'+bulkHtml+'</div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
+    function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div class="name">'+ (it.name||'') +'</div><div class="desc">'+ (it.description||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div></div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
+  function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; var bulkHtml = ''; if(Array.isArray(it.bulkPricing) && it.bulkPricing.length){ bulkHtml = '<div class="bulk">'; for(var b=0;b<it.bulkPricing.length;b++){ var tier = it.bulkPricing[b]; bulkHtml += '<div class="tier">Buy '+tier.minQty+'+ @ $'+tier.price.toFixed(2)+'</div>'; } bulkHtml += '</div>'; } out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div class="name">'+ (it.name||'') +'</div><div class="desc">'+ (it.description||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div>'+bulkHtml+'</div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
       function bindAdd(){ var buttons = document.querySelectorAll('.add'); for(var j=0;j<buttons.length;j++){ (function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var ex=null; for(var k=0;k<c.items.length;k++){ if(c.items[k].id===id) { ex=c.items[k]; break; } } if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); }; })(buttons[j]); } }
       function bindView(){ var buttons = document.querySelectorAll('.view, .thumb'); for(var j=0;j<buttons.length;j++){ (function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); openProduct(id); }; })(buttons[j]); } }
 
-      function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p><p><button id="modal-add">Add to cart</button></p></div></div>'; document.getElementById('modal-backdrop').style.display='flex'; document.getElementById('modal-close').onclick = function(){ document.getElementById('modal-backdrop').style.display='none'; }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); document.getElementById('modal-backdrop').style.display='none'; } }
-  function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); var bulkHtml=''; if(Array.isArray(p.bulkPricing) && p.bulkPricing.length){ bulkHtml='<div class="bulk-modal"><strong>Bulk pricing:</strong><ul>'; for(var i=0;i<p.bulkPricing.length;i++){ var t=p.bulkPricing[i]; bulkHtml+='<li>Buy '+t.minQty+'+ @ $'+t.price.toFixed(2)+'</li>'; } bulkHtml+='</ul></div>'; } body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p>'+bulkHtml+'<p><button id="modal-add">Add to cart</button></p></div></div>'; document.getElementById('modal-backdrop').style.display='flex'; document.getElementById('modal-close').onclick = function(){ document.getElementById('modal-backdrop').style.display='none'; }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); document.getElementById('modal-backdrop').style.display='none'; } }
+  function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p><p><button id="modal-add">Add to cart</button></p></div></div>'; setBackdrop('modal-backdrop', true); document.getElementById('modal-close').onclick = function(){ setBackdrop('modal-backdrop', false); }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); setBackdrop('modal-backdrop', false); } }
+  function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); var bulkHtml=''; if(Array.isArray(p.bulkPricing) && p.bulkPricing.length){ bulkHtml='<div class="bulk-modal"><strong>Bulk pricing:</strong><ul>'; for(var i=0;i<p.bulkPricing.length;i++){ var t=p.bulkPricing[i]; bulkHtml+='<li>Buy '+t.minQty+'+ @ $'+t.price.toFixed(2)+'</li>'; } bulkHtml+='</ul></div>'; } body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p>'+bulkHtml+'<p><button id="modal-add">Add to cart</button></p></div></div>'; setBackdrop('modal-backdrop', true); document.getElementById('modal-close').onclick = function(){ setBackdrop('modal-backdrop', false); }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); setBackdrop('modal-backdrop', false); } }
 
       document.getElementById('q').addEventListener('input', function(e){ var q = e.target.value.toLowerCase(); render(products.filter(function(p){ return p.name.toLowerCase().includes(q) || (p.category||'').toLowerCase().includes(q); })); });
       document.getElementById('view-cart').addEventListener('click', function(){ showCart(); });
-      document.getElementById('cart-close').onclick = function(){ document.getElementById('cart-backdrop').style.display='none'; };
+  document.getElementById('cart-close').onclick = function(){ setBackdrop('cart-backdrop', false); };
 
-      async function showCart(){ var c = loadCart(); var list = document.getElementById('cart-list'); list.innerHTML=''; var total=0; if (!c.items.length){ document.getElementById('cart-total').textContent = '0.00'; document.getElementById('cart-backdrop').style.display='flex'; return; }
+  async function showCart(){ var c = loadCart(); var list = document.getElementById('cart-list'); list.innerHTML=''; var total=0; if (!c.items.length){ document.getElementById('cart-total').textContent = '0.00'; setBackdrop('cart-backdrop', true); return; }
         // batch price lookups per unique product
         var lookups = {};
         for(var i=0;i<c.items.length;i++){ lookups[c.items[i].id] = true; }
@@ -512,7 +522,7 @@ app.get('/stores/:id', (req, res) => {
         Array.from(document.querySelectorAll('#cart-list .inc')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = (it.qty||0)+1; saveCart(c); showCart(); updateCartUI(); } }; });
         Array.from(document.querySelectorAll('#cart-list .dec')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = Math.max(0, (it.qty||0)-1); if(it.qty===0){ c.items = c.items.filter(function(x){return x.id!==id}); } saveCart(c); showCart(); updateCartUI(); } }; });
         Array.from(document.querySelectorAll('#cart-list .rm')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); c.items = c.items.filter(function(x){return x.id!==id}); saveCart(c); showCart(); updateCartUI(); }; });
-        document.getElementById('cart-backdrop').style.display='flex';
+  setBackdrop('cart-backdrop', true);
       }
 
   document.getElementById('save-server').onclick = async function(){ var c=loadCart(); const res = await fetch('/api/stores/'+storeId+'/cart',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ items: c.items })}); if(res.ok) alert('Saved server-side'); else alert('Save failed'); };
@@ -525,6 +535,7 @@ app.get('/stores/:id', (req, res) => {
   </html>`;
 
   res.send(html);
+  // (no debug logs)
 });
 
 // Cart page — shows client cart and can save to server
