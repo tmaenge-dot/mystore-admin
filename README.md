@@ -95,6 +95,13 @@ Open a store in your browser (example):
 - http://localhost:5000/stores/choppies
 - http://localhost:5000/stores/woolworths
 
+Pitch & demo for Thuso Wholesaler
+--------------------------------
+
+If you're presenting this app to Thuso Wholesaler, use the `DEMO_THUSO.md` guide for a short, focused walkthrough tailored to wholesale buyers and store managers. It highlights bulk-pricing, ordering, and the admin upload workflow so you can demonstrate how the platform supports wholesale inventory and catalog updates.
+
+See `DEMO_THUSO.md` for the step-by-step demo script.
+
 CI
 
 [![CI (YOUR_OWNER/YOUR_REPO)](https://github.com/YOUR_OWNER/YOUR_REPO/actions/workflows/nodejs.yml/badge.svg)](https://github.com/YOUR_OWNER/YOUR_REPO/actions/workflows/nodejs.yml)
