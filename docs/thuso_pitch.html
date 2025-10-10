@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Thuso Pitch</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; margin:0; background:#111827;color:#fff}
+    .deck{max-width:1000px;margin:40px auto;padding:20px}
+    section{background:linear-gradient(180deg,#0b5f3a,#00695c);padding:40px;border-radius:12px;margin:18px 0}
+    h1{margin:0 0 8px;font-size:34px}
+    h2{margin:0 0 12px}
+    p,li{font-size:18px;line-height:1.45}
+    ul{padding-left:20px}
+    .muted{opacity:0.9;color:#e6fff6}
+    .footer{font-size:13px;color:#cfeee6;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <section>
+      <h1>Thuso Wholesaler</h1>
+      <p class="muted">MyStore — Lightweight wholesale storefront and admin</p>
+    </section>
+
+    <section>
+      <h2>The problem</h2>
+      <ul>
+        <li>Small retailers need simple ways to order wholesale goods</li>
+        <li>Catalog updates and product image updates are slow and technical</li>
+        <li>Inventory and bulk pricing are hard to communicate</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Our solution</h2>
+      <ul>
+        <li>Minimal admin + storefront</li>
+        <li>Secure image uploads and optional server-side processing</li>
+        <li>Bulk pricing, cart persistence, and order creation</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Key features</h2>
+      <ul>
+        <li>Safe filename generation & MIME allow-list</li>
+        <li>Server-side resizing (sharp) and orphan cleanup</li>
+        <li>Audit logging and simple file-backed persistence</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Demo flow</h2>
+      <ol>
+        <li>Admin logs in and uploads a product image</li>
+        <li>Storefront updates to show the new image</li>
+        <li>Customer saves cart, checks out, and receives order confirmation</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Pilot & Pricing</h2>
+      <p>4-week pilot to integrate catalog and optional S3 presigned uploads. Custom pricing available.</p>
+    </section>
+
+    <section>
+      <h2>Next steps</h2>
+      <p>Provide sample product data and decide on storage (local vs S3). We'll scope integration and schedule the pilot.</p>
+      <div class="footer">Contact: [presenter email] • Demo repo: mystore-admin</div>
+    </section>
+  </div>
+</body>
+</html>
