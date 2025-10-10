@@ -1,0 +1,64 @@
+TAP version 13
+# Subtest: GET /api/health returns ok
+ok 1 - GET /api/health returns ok
+  ---
+  duration_ms: 37.25538
+  type: 'test'
+  ...
+# Subtest: GET /api/stores returns array
+ok 2 - GET /api/stores returns array
+  ---
+  duration_ms: 12.152671
+  type: 'test'
+  ...
+# Subtest: GET products for store
+ok 3 - GET products for store
+  ---
+  duration_ms: 2.88491
+  type: 'test'
+  ...
+# Subtest: POST and GET cart, create order, get order
+ok 4 - POST and GET cart, create order, get order
+  ---
+  duration_ms: 26.675602
+  type: 'test'
+  ...
+# Subtest: invalid cart and invalid order payloads
+ok 5 - invalid cart and invalid order payloads
+  ---
+  duration_ms: 11.490813
+  type: 'test'
+  ...
+# Subtest: e2e multipart upload creates file and mapping then delete cleans up
+ok 6 - e2e multipart upload creates file and mapping then delete cleans up
+  ---
+  duration_ms: 137.796497
+  type: 'test'
+  ...
+# Subtest: admin multipart upload and delete flow
+ok 7 - admin multipart upload and delete flow
+  ---
+  duration_ms: 168.046581
+  type: 'test'
+  ...
+# Subtest: upload invalid file type is rejected
+ok 8 - upload invalid file type is rejected
+  ---
+  duration_ms: 174.909563
+  type: 'test'
+  ...
+# Subtest: db.setImageMap and setImageMap removal
+ok 9 - db.setImageMap and setImageMap removal
+  ---
+  duration_ms: 6.235012
+  type: 'test'
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 540.175037

@@ -1,0 +1,73 @@
+name: Orphaned image detection
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # daily at 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  detect-orphans:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run orphan detection (dry-run)
+        id: detect
+        run: |
+          node scripts/cleanup-orphaned-images.js > orphan-output.txt || true
+          echo "EOF<<EOF" >> $GITHUB_OUTPUT
+          $(cat orphan-output.txt)
+          EOF
+
+      - name: Upload orphan output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orphan-output
+          path: orphan-output.txt
+
+      - name: Comment on maintenance issue (or create one)
+        if: ${{ contains(steps.detect.outputs['EOF<<EOF'], 'Found') }}
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync('orphan-output.txt', 'utf8');
+            const title = 'Orphaned images detected in public/images';
+
+            // Try to find an open issue with the exact title
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+
+            const found = issues.find(i => i.title === title);
+            if (found) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: found.number,
+                body: `Orphan detection run (${new Date().toISOString()}):\n\n${content}`
+              });
+              core.info(`Appended comment to issue #${found.number}`);
+            } else {
+              // Create a new issue as a fallback, but indicate it's created by the workflow
+              const { data: created } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: `Orphan detection run (${new Date().toISOString()}):\n\n${content}`
+              });
+              core.info(`Created issue #${created.number}`);
+            }
