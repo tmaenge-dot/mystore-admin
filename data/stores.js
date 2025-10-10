@@ -10,7 +10,9 @@ const stores = [
     id: 'thuso',
     slug: 'thuso',
     name: 'Thuso Wholesaler',
-    brandColor: '#0b5f3a',
+    brandColor: '#00b4e6',
+  // use a logo file placed at public/images/thuso.svg (the SVG is included in the repo)
+  logo: '/images/thuso.svg',
     description: 'Wholesale and bulk groceries — Thuso Wholesaler'
   },
   {
