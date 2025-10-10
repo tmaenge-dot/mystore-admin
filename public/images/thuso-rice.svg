@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120">
+  <rect width="160" height="120" rx="12" fill="#f7f7f7"/>
+  <g transform="translate(12,12)">
+    <rect width="136" height="96" rx="8" fill="#fff" stroke="#e6e6e6"/>
+    <text x="68" y="52" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#0b5f3a" text-anchor="middle">Bulk Rice 10kg</text>
+  </g>
+</svg>
