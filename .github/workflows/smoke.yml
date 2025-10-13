@@ -1,9 +1,12 @@
 name: Smoke test - store
 
 on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 2 * * *' # nightly at 02:00 UTC
   push:
-    branches: [ main, feature/* ]
-  pull_request:
+    tags:
+      - 'v*'
 
 jobs:
   smoke-store:
