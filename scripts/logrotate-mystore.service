@@ -1,0 +1,7 @@
+[Unit]
+Description=Rotate MyStore logs (user)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/oem/mystore/mystore-admin
+ExecStart=/usr/sbin/logrotate -s /home/oem/mystore/mystore-admin/logs/logrotate.state /home/oem/mystore/mystore-admin/scripts/logrotate-mystore.conf
