@@ -11,9 +11,9 @@ set -euo pipefail
 
 STORE=${1:-choppies}
 BASE=${BASE:-http://localhost:5000}
-RETRIES=${RETRIES:-5}
-DELAY=${DELAY:-1}
-CURL_TIMEOUT=${CURL_TIMEOUT:-10}
+RETRIES=${RETRIES:-8}
+DELAY=${DELAY:-2}
+CURL_TIMEOUT=${CURL_TIMEOUT:-15}
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "Error: jq is required. Install jq and retry."
