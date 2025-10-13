@@ -1,0 +1,16 @@
+[
+  {
+    "id": "mgox1jrq",
+    "items": [
+      {
+        "id": "p1",
+        "name": "Apple",
+        "price": 2,
+        "qty": 0,
+        "lineTotal": 0
+      }
+    ],
+    "total": 0,
+    "createdAt": "2025-10-13T09:13:35.318Z"
+  }
+]

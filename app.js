@@ -3,6 +3,7 @@ import cors from "cors";
 import stores from "./data/stores.js";
 import products from "./data/products.js";
 import db from "./lib/db.js";
+import { fmtCurrency, renderProductCards } from './lib/render.js';
 import session from 'express-session';
 import SQLiteStoreFactory from 'connect-sqlite3';
 import csurf from 'csurf';
@@ -11,6 +12,34 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import sharp from 'sharp';
+// small helper: darken a hex color by a percentage (0-1)
+function hexDarken(hex, amount){
+  try{
+    let c = hex.replace('#',''); if(c.length===3) c = c.split('').map(ch=>ch+ch).join('');
+    const num = parseInt(c,16);
+    let r = (num >> 16) & 0xff;
+    let g = (num >> 8) & 0xff;
+    let b = num & 0xff;
+    r = Math.max(0, Math.min(255, Math.floor(r * (1 - amount))));
+    g = Math.max(0, Math.min(255, Math.floor(g * (1 - amount))));
+    b = Math.max(0, Math.min(255, Math.floor(b * (1 - amount))));
+    return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+  }catch(e){ return hex; }
+}
+// small helper: lighten a hex color by a percentage (0-1)
+function hexLighten(hex, amount){
+  try{
+    let c = hex.replace('#',''); if(c.length===3) c = c.split('').map(ch=>ch+ch).join('');
+    const num = parseInt(c,16);
+    let r = (num >> 16) & 0xff;
+    let g = (num >> 8) & 0xff;
+    let b = num & 0xff;
+    r = Math.max(0, Math.min(255, Math.floor(r + (255 - r) * amount)));
+    g = Math.max(0, Math.min(255, Math.floor(g + (255 - g) * amount)));
+    b = Math.max(0, Math.min(255, Math.floor(b + (255 - b) * amount)));
+    return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+  }catch(e){ return hex; }
+}
 const SQLiteStore = SQLiteStoreFactory(session);
 
 const app = express();
@@ -97,20 +126,119 @@ app.get('/favicon.ico', (req, res) => {
   res.send(svg);
 });
 
+// Additional app icons (PNG and ICO) for desktop shortcuts
+app.get('/mystore-icon.png', (req, res) => {
+  const p = path.join(process.cwd(), 'public', 'images', 'mystore-icon-512.png');
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.sendFile(p);
+});
+
+app.get('/mystore-icon.ico', (req, res) => {
+  const p = path.join(process.cwd(), 'public', 'images', 'mystore-icon.ico');
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.sendFile(p);
+});
+
 // Root: keep a small landing page
+// Redirect root to the featured storefront for demo/pitch convenience
 app.get("/", (req, res) => {
-  res.send(`<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Mystore Admin</title>
-      </head>
-      <body>
-        <h1>Mystore Admin Backend</h1>
-        <p>Use the API at <code>/api/stores</code> or open a store at <code>/stores/:id</code>.</p>
-      </body>
-    </html>`);
+  // Default featured store can be overridden with FEATURED_STORE env var.
+  // If a user has previously selected a preferred store we persist it in a cookie
+  // (set by client-side JS). Honor FEATURED_STORE first, then cookie, then fallback.
+  const cookieHeader = req.headers && req.headers.cookie ? req.headers.cookie : '';
+  let preferred = null;
+  try{
+    // Prefer session-stored preference (if user saved on this browser/session)
+    if (req && req.session && req.session.preferred_store) preferred = req.session.preferred_store;
+    // Fallback to cookie-based preference
+    if(!preferred){
+      const parts = cookieHeader.split(';').map(c=>c.trim());
+      const found = parts.find(p => p.startsWith('preferred_store='));
+      if(found){ preferred = decodeURIComponent(found.split('=')[1] || ''); }
+    }
+  }catch(e){ preferred = null; }
+  const featured = process.env.FEATURED_STORE || preferred || 'sefalana';
+  return res.redirect(302, `/stores/${featured}`);
+});
+
+// Simple probe endpoint to verify connectivity from other devices or health checks
+app.get('/probe', (req, res) => {
+  res.type('text/plain').send('ok');
+});
+
+// API to set preferred store (saves to session and cookie)
+app.post('/api/preferred-store', (req, res) => {
+  const id = req.body && req.body.id;
+  if (!id) return res.status(400).json({ error: 'missing id' });
+  req.session.preferred_store = id;
+  const expires = new Date(); expires.setDate(expires.getDate() + 365);
+  res.cookie('preferred_store', id, { path: '/', expires });
+  // persist mapping of sessionID -> preferred store for admin reporting
+  try{
+    const countsPath = path.join(process.cwd(), 'data_store', 'preferred_counts.json');
+    let counts = {};
+    if (fs.existsSync(countsPath)){
+      try{ counts = JSON.parse(fs.readFileSync(countsPath, 'utf8') || '{}'); }catch(e){ counts = {}; }
+    }
+    counts[id] = counts[id] || { count: 0, lastUpdated: null };
+    counts[id].count = (counts[id].count || 0) + 1;
+    counts[id].lastUpdated = (new Date()).toISOString();
+    fs.writeFileSync(countsPath, JSON.stringify(counts, null, 2));
+  }catch(e){ /* ignore persistence errors */ }
+  return res.json({ ok: true, id });
+});
+
+// API to clear preferred store
+app.delete('/api/preferred-store', (req, res) => {
+  try{ delete req.session.preferred_store; }catch(e){}
+  res.clearCookie('preferred_store', { path: '/' });
+  // remove from persisted mapping
+  try{
+    const countsPath = path.join(process.cwd(), 'data_store', 'preferred_counts.json');
+    if (fs.existsSync(countsPath)){
+      let counts = {};
+      try{ counts = JSON.parse(fs.readFileSync(countsPath, 'utf8') || '{}'); }catch(e){ counts = {}; }
+      // decrement count for this store if session had one (best-effort)
+      // Note: we do not track per-session mapping anymore, so this is a no-op for now.
+      fs.writeFileSync(countsPath, JSON.stringify(counts, null, 2));
+    }
+  }catch(e){}
+  return res.json({ ok: true });
+});
+
+// Admin: view persisted preferred stores (simple report)
+app.get('/admin/preferences', csrfProtection, (req, res) => {
+  // requireAdmin middleware is global; this route is protected
+  const countsPath = path.join(process.cwd(), 'data_store', 'preferred_counts.json');
+  let counts = {};
+  if (fs.existsSync(countsPath)){
+    try{ counts = JSON.parse(fs.readFileSync(countsPath, 'utf8') || '{}'); }catch(e){ counts = {}; }
+  }
+  const countsHtml = Object.keys(counts).map(k => `<li>${k}: ${counts[k].count} (last: ${counts[k].lastUpdated})</li>`).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preferences</title><link rel="stylesheet" href="/styles.css"></head><body><main class="admin container"><h1>Preferred stores (aggregated)</h1><section><h2>Counts</h2><ul>${countsHtml}</ul></section><p><a href="/admin">Back</a></p></main></body></html>`;
+  res.send(html);
+});
+
+// Serve the Thuso pitch HTML inline for easy viewing
+app.get('/thuso_pitch', (req, res) => {
+  const p = path.join(process.cwd(), 'docs', 'thuso_pitch.html');  
+  
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.type('html').send(fs.readFileSync(p, 'utf8'));
+});
+
+// Download the Thuso pitch as an attachment
+app.get('/download/thuso_pitch.html', (req, res) => {
+  const p = path.join(process.cwd(), 'docs', 'thuso_pitch.html');
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.download(p, 'thuso_pitch.html');
+});
+
+// Serve generated PDF of the pitch (created via headless Chrome)
+app.get('/download/thuso_pitch.pdf', (req, res) => {
+  const p = path.join(process.cwd(), 'docs', 'thuso_pitch.pdf');
+  if (!fs.existsSync(p)) return res.status(404).send('not found');
+  res.download(p, 'thuso_pitch.pdf');
 });
 
 // Health
@@ -139,7 +267,11 @@ app.get('/admin', csrfProtection, (req, res) => {
 app.get('/admin/stores/:id', csrfProtection, (req, res) => {
   const id = req.params.id;
   const store = stores.find(s => s.id === id || s.slug === id);
-  if (!store) return res.status(404).send('<h1>Store not found</h1>');
+  if (!store) {
+    const available = stores.map(s => `<li><a href="/stores/${s.id}">${s.name} — /stores/${s.id}</a></li>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Store not found</title><link rel="stylesheet" href="/styles.css"></head><body><main style="padding:18px"><h1>Store not found</h1><p>No store found for "${id}".</p><p>Available stores:</p><ul>${available}</ul><p><a href="/">Back home</a></p></main></body></html>`;
+    return res.status(404).send(html);
+  }
   const cart = db.getCart(id) || { items: [] };
   const orders = db.listOrders(id) || [];
   // include CSRF token in forms
@@ -147,9 +279,31 @@ app.get('/admin/stores/:id', csrfProtection, (req, res) => {
   const promo = db.getPromo(id) || { enabled:false, text:'' };
   const imageMap = db.getImageMap(id) || {};
   const imagesHtml = Object.entries(imageMap).map(([pid, url]) => `<li>${pid} — <img src="${url}" style="height:32px;vertical-align:middle"> <form method="post" action="/admin/stores/${id}/images/${encodeURIComponent(pid)}/delete" style="display:inline"><input type="hidden" name="_csrf" value="${token}"><button type="submit">Delete</button></form></li>`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin - ${store.name}</title><link rel="stylesheet" href="/styles.css"></head><body><header><h1>Admin - ${store.name}</h1></header><main class="admin"><section><h2>Cart</h2><pre>${JSON.stringify(cart,null,2)}</pre><form method="post" action="/admin/stores/${id}/cart/delete"><input type="hidden" name="_csrf" value="${token}"><button type="submit">Clear Cart</button></form></section><section><h2>Orders</h2><table><thead><tr><th>Order</th><th>Created</th><th>Total</th><th>Action</th></tr></thead><tbody>${orders.map(o=>`<tr><td>${o.id}</td><td>${o.createdAt}</td><td>$${(o.total||0).toFixed(2)}</td><td><form method="post" action="/admin/stores/${id}/orders/${o.id}/delete"><input type="hidden" name="_csrf" value="${token}"><button type="submit">Delete</button></form></td></tr>`).join('')}</tbody></table></section><section><h2>Promo / Ribbon</h2><form method="post" action="/admin/stores/${id}/promo"><input type="hidden" name="_csrf" value="${token}"><label><input type="checkbox" name="enabled" ${promo.enabled? 'checked': ''}> Enabled</label><br><label>Text <input name="text" value="${(promo.text||'').replace(/"/g,'&quot;')}"></label><br><label>Starts At <input name="startsAt" type="datetime-local" value="${promo.startsAt || ''}"></label><br><label>Ends At <input name="endsAt" type="datetime-local" value="${promo.endsAt || ''}"></label><br><button type="submit">Save Promo</button></form></section><section><h2>Product images</h2><form method="post" action="/admin/stores/${id}/upload" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="${token}"><label>Product ID <input name="productId"></label><br><label>Image URL <input name="imageUrl" placeholder="/images/your-image.svg or https://..." ></label><br><label>Or upload file <input type="file" name="imageFile"></label><br><button type="submit">Set Image URL</button></form></section>${imagesHtml ? '<section><h3>Existing images</h3><ul>' + imagesHtml + '</ul></section>' : ''}<p><a href="/admin">Back</a></p></main></body></html>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin - ${store.name}</title><link rel="stylesheet" href="/styles.css"></head><body><header><h1>Admin - ${store.name}</h1></header><main class="admin"><section><h2>Cart</h2><pre>${JSON.stringify(cart,null,2)}</pre><form method="post" action="/admin/stores/${id}/cart/delete"><input type="hidden" name="_csrf" value="${token}"><button type="submit">Clear Cart</button></form></section><section><h2>Orders</h2><table><thead><tr><th>Order</th><th>Created</th><th>Total</th><th>Action</th></tr></thead><tbody>${orders.map(o=>`<tr><td>${o.id}</td><td>${o.createdAt}</td><td>BWP ${(o.total||0).toFixed(2)}</td><td><form method="post" action="/admin/stores/${id}/orders/${o.id}/delete"><input type="hidden" name="_csrf" value="${token}"><button type="submit">Delete</button></form></td></tr>`).join('')}</tbody></table></section><section><h2>Promo / Ribbon</h2><form method="post" action="/admin/stores/${id}/promo"><input type="hidden" name="_csrf" value="${token}"><label><input type="checkbox" name="enabled" ${promo.enabled? 'checked': ''}> Enabled</label><br><label>Text <input name="text" value="${(promo.text||'').replace(/"/g,'&quot;')}"></label><br><label>Starts At <input name="startsAt" type="datetime-local" value="${promo.startsAt || ''}"></label><br><label>Ends At <input name="endsAt" type="datetime-local" value="${promo.endsAt || ''}"></label><br><button type="submit">Save Promo</button></form></section><section><h2>Product images</h2><form method="post" action="/admin/stores/${id}/upload" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="${token}"><label>Product ID <input name="productId"></label><br><label>Image URL <input name="imageUrl" placeholder="/images/your-image.svg or https://..." ></label><br><label>Or upload file <input type="file" name="imageFile"></label><br><button type="submit">Set Image URL</button></form></section>${imagesHtml ? '<section><h3>Existing images</h3><ul>' + imagesHtml + '</ul></section>' : ''}<p><a href="/admin">Back</a></p></main></body></html>`;
   res.send(html);
 });
+
+// Admin: edit store branding (color, logo path)
+app.get('/admin/stores/:id/branding', csrfProtection, (req, res) => {
+  const id = req.params.id;  
+  
+  const store = stores.find(s => s.id === id || s.slug === id);
+  if (!store) return res.status(404).send('not found');
+  const brand = db.getBrand(id) || { brandColor: store.brandColor || '', logo: store.logo || '', textColor: store.textColor || '' };
+  const token = (req.csrfToken && req.csrfToken()) || '';
+  const ok = req.query.ok ? true : false;
+  const error = req.query.error || '';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Branding - ${store.name}</title><link rel="stylesheet" href="/styles.css"></head><body><main class="admin container"><h1>Branding - ${store.name}</h1>${ok?'<div style="background:#ecfdf5;color:#065f46;padding:8px;border-radius:8px;margin-bottom:8px">Saved</div>':''}${error?'<div style="background:#fff1f2;color:#981b1b;padding:8px;border-radius:8px;margin-bottom:8px>'+error+'</div>':''}<form method="post" action="/admin/stores/${id}/branding" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="${token}"><label>Brand color <input id="brandColor" name="brandColor" value="${(brand.brandColor||'').replace(/"/g,'&quot;')}"></label><br><label>Text color <input id="textColor" name="textColor" value="${(brand.textColor||'').replace(/"/g,'&quot;')}"></label> <button id="applySuggestion" type="button" style="margin-left:8px">Apply suggestion</button><br><label>Logo path <input id="logoPath" name="logo" value="${(brand.logo||'').replace(/"/g,'&quot;')}"></label><br><label>Or upload logo file <input type="file" name="logoFile" id="logoFile"></label><div style="margin-top:8px"><button type="submit">Save</button></div></form><p><a href="/admin/stores/${id}">Back</a></p><hr><h3>Preview</h3><div id="preview" style="padding:18px;border-radius:12px;background:${brand.brandColor||'#f3f4f6'};color:${brand.textColor||'#fff'};display:flex;gap:12px;align-items:center"><img id="previewLogo" src="${brand.logo||''}" style="height:48px;width:48px;object-fit:contain;border-radius:8px;background:#fff"><div><strong>${store.name}</strong><div style="opacity:0.9">${store.description}</div><div style="margin-top:8px;display:flex;gap:8px;align-items:center"><div id="sw_brand" style="width:40px;height:24px;border-radius:6px;background:${brand.brandColor||'#f3f4f6'};box-shadow:inset 0 -2px 0 rgba(0,0,0,0.15)" title="brand"></div><div id="sw_strong" style="width:40px;height:24px;border-radius:6px;background:${hexDarken(brand.brandColor||'#888',0.18)};box-shadow:inset 0 -2px 0 rgba(0,0,0,0.15)" title="brand-strong"></div><div id="sw_light" style="width:40px;height:24px;border-radius:6px;background:${hexLighten(brand.brandColor||'#888',0.18)};box-shadow:inset 0 -2px 0 rgba(0,0,0,0.15)" title="brand-light"></div></div></div></div>
+<div id="contrastResults" style="margin-top:12px;padding:8px;border-radius:8px;background:#fff;border:1px solid #e5e7eb;color:#111;max-width:480px">
+  <strong>Contrast checks</strong>
+  <div id="contrastList" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;font-size:13px"></div>
+</div>
+<script src="/branding-contrast.js"></script></main></body></html>`;
+  res.send(html);
+});
+
+// Use multer upload single + rate limiter + csrfProtection similar to other admin upload handlers
+// branding POST handler moved below after multer/upload is initialized
 
 // multer storage config: save to public/images with a safe generated filename
 const imagesDir = path.join(process.cwd(), 'public', 'images');
@@ -158,6 +312,37 @@ if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
 // Allowed mime types and extensions for uploads (simple allow-list)
 const ALLOWED_MIME = new Set(['image/svg+xml', 'image/png', 'image/jpeg', 'image/gif']);
 const ALLOWED_EXT = new Set(['.svg', '.png', '.jpg', '.jpeg', '.gif']);
+
+// Simple in-memory rate limiter for admin uploads (per-IP)
+// - WINDOW_MS: sliding window in ms
+// - MAX_UPLOADS: maximum number of uploads allowed per window
+// This is intentionally small, lightweight, and suitable for demo/local use only.
+const UPLOAD_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const UPLOAD_RATE_LIMIT_MAX = Number(process.env.UPLOAD_RATE_LIMIT_MAX) || 6; // default 6 uploads per minute
+const _uploadRateMap = new Map(); // key -> array of timestamps (ms)
+
+function cleanupOld(timestamps, now){
+  while(timestamps.length && (now - timestamps[0]) > UPLOAD_RATE_LIMIT_WINDOW_MS){ timestamps.shift(); }
+}
+
+function uploadRateLimiter(req, res, next){
+  try{
+    const key = (req.ip || req.connection && req.connection.remoteAddress) || 'unknown';
+    const now = Date.now();
+    let arr = _uploadRateMap.get(key);
+    if (!arr) { arr = []; _uploadRateMap.set(key, arr); }
+    cleanupOld(arr, now);
+    if (arr.length >= UPLOAD_RATE_LIMIT_MAX){
+      res.setHeader('Retry-After', Math.ceil(UPLOAD_RATE_LIMIT_WINDOW_MS / 1000));
+      return res.status(429).send({ error: 'rate limit exceeded, try again later' });
+    }
+    // record this attempt
+    arr.push(now);
+    // keep map size bounded (avoid memory growth) — remove entries with empty arrays
+    if (arr.length === 0) _uploadRateMap.delete(key);
+    return next();
+  }catch(e){ return next(); }
+}
 
 // small UUID-ish generator (no dependency)
 function genId(){
@@ -200,7 +385,7 @@ const upload = multer({ storage: storage, limits: { fileSize: 5 * 1024 * 1024 },
 
 // Admin file upload (multipart) - saves file and maps it to a productId
 const isTestRunner = (process.env.NODE_ENV === 'test') || (process.execArgv && process.execArgv.indexOf('--test') !== -1);
-const uploadMiddleware = [upload.single('imageFile'), csrfProtection];
+const uploadMiddleware = [upload.single('imageFile'), uploadRateLimiter, csrfProtection];
 app.post('/admin/stores/:id/upload', ...uploadMiddleware, async (req, res) => {
   const id = req.params.id;
   const productId = req.body.productId;
@@ -234,6 +419,41 @@ app.post('/admin/stores/:id/upload', ...uploadMiddleware, async (req, res) => {
   }
   db.auditLog({ action: 'set_image', store: id, user: (req.session && req.session.user) || 'unknown', productId, file: imageUrl });
   res.redirect('/admin/stores/' + id);
+});
+
+// Branding POST handler (after multer/upload initialization)
+app.post('/admin/stores/:id/branding', upload.single('logoFile'), uploadRateLimiter, csrfProtection, async (req, res) => {
+  const id = req.params.id;
+  let brandColor = (req.body && req.body.brandColor) || '';
+  let logo = (req.body && req.body.logo) || '';
+  let textColor = (req.body && req.body.textColor) || '';
+
+  brandColor = (brandColor || '').trim();
+  logo = (logo || '').trim();
+
+  // validate color (allow #RGB or #RRGGBB)
+  if (brandColor && !/^#(?:[0-9a-fA-F]{3}){1,2}$/.test(brandColor)){
+    return res.redirect('/admin/stores/' + id + '/branding?error=' + encodeURIComponent('Invalid color hex, use #RRGGBB or #RGB'));
+  }
+
+  // If a file was uploaded, use it as the logo
+  if (req.file){
+    try{
+      const fp = req.file.path;
+      // optional: process with sharp to ensure sane size
+      await sharp(fp).resize({ width: 800, withoutEnlargement: true }).toFile(fp + '.tmp');
+      fs.renameSync(fp + '.tmp', fp);
+      logo = '/images/' + path.basename(fp);
+    }catch(err){
+      // cleanup and continue (do not fail the whole request)
+      try{ if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); }catch(e){}
+      return res.redirect('/admin/stores/' + id + '/branding?error=' + encodeURIComponent('Invalid logo upload'));
+    }
+  }
+
+  db.setBrand(id, { brandColor: brandColor || '', logo: logo || '', textColor: textColor || '' });
+  db.auditLog({ action: 'set_brand', store: id, user: (req.session && req.session.user) || 'unknown', brand: { brandColor, logo, textColor } });
+  return res.redirect('/admin/stores/' + id + '/branding?ok=1');
 });
 
 // (test-only helper removed) Tests should use the real /admin/login flow to obtain a session and CSRF token.
@@ -424,13 +644,22 @@ app.get('/stores/:id', (req, res) => {
   const id = req.params.id;
   // (no debug logs)
   const store = stores.find(s => s.id === id || s.slug === id);
-  if (!store) return res.status(404).send('<h1>Store not found</h1>');
+  if (!store) {
+    const available = stores.map(s => `<li><a href="/stores/${s.id}">${s.name} — /stores/${s.id}</a></li>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Store not found</title><link rel="stylesheet" href="/styles.css"></head><body><main style="padding:18px"><h1>Store not found</h1><p>No store found for "${id}".</p><p>Available stores:</p><ul>${available}</ul><p><a href="/">Back home</a></p></main></body></html>`;
+    return res.status(404).send(html);
+  }
 
   // per-store branding
-  const brandColor = store.brandColor || '#222';
+  // allow persisted branding overrides (brandColor, logo) via db
+  const persistedBrand = db.getBrand(id) || {};
+  const brandColor = persistedBrand.brandColor || store.brandColor || '#222';
   // allow per-store explicit logo path (e.g. '/images/thuso.png') or fall back to slug-based svg
-  const logoUrl = store.logo || `/images/${store.slug || id}.svg`;
+  const logoUrl = (persistedBrand.logo && persistedBrand.logo.length) ? persistedBrand.logo : (store.logo || `/images/${store.slug || id}.svg`);
   const promo = db.getPromo(id) || { enabled: false, text: '' };
+
+    const storeProducts = products[id] || [];
+    const productCardsHtml = renderProductCards(storeProducts);
 
   // build a safe HTML string without nested template literal complexity
   const html = `<!doctype html>
@@ -439,7 +668,12 @@ app.get('/stores/:id', (req, res) => {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>${store.name || ''}</title>
-    <style>:root{--brand-color:${brandColor}}</style>
+    <meta name="description" content="${(store.description||'').replace(/\"/g,'&quot;')}" />
+    <meta property="og:title" content="${store.name || ''}" />
+    <meta property="og:description" content="${(store.description||'').replace(/\"/g,'&quot;')}" />
+    <meta property="og:image" content="${logoUrl}" />
+    <meta name="twitter:card" content="summary_large_image" />
+  <style>:root{--brand:${brandColor};--brand-strong:${hexDarken(brandColor, 0.18)};--brand-light:${hexLighten(brandColor, 0.18)}}</style>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body style="background: #f7faf9">
@@ -451,15 +685,40 @@ app.get('/stores/:id', (req, res) => {
             <h1>${store.name || ''}</h1>
             <p class="tag">${store.description || ''}</p>
             <div class="hero-actions"><a class="brand-btn btn-primary" href="#products" onclick="document.getElementById('q').focus();return false">Shop now</a></div>
+            <div class="trust-line">Free pickup • Secure checkout • Bulk discounts</div>
           </div>
         </div>
       </div>
       ${promo.enabled ? `<div class="promo-ribbon">${promo.text}</div>` : ''}
     </header>
     <div class="search"><input id="q" placeholder="Search products"/></div>
+    <!-- Shop selector: lets customers switch between available stores -->
+    <nav class="shop-selector" aria-label="Choose shop">
+      <ul class="shop-list">
+        ${stores.slice().sort((a,b) => (a.name || '').localeCompare(b.name || '')).map(s => `
+          <li class="shop-item" data-store="${s.id}">
+            <a href="/stores/${s.id}" title="${s.name}">
+              <img src="${s.logo || `/images/${s.slug || s.id}.svg`}" alt="${s.name} logo" class="shop-logo" onerror="this.style.visibility='hidden'">
+              <span class="shop-name">${s.name}</span>
+            </a>
+            <span class="preferred-badge" aria-hidden="true" style="display:none">Saved</span>
+            <button class="save-pref-btn btn" data-store="${s.id}" title="Save as preferred" style="margin-left:8px;padding:6px 8px;font-size:13px">Save</button>
+          </li>
+        `).join('')}
+      </ul>
+      <div class="pref-controls" style="display:flex;align-items:center;gap:8px;padding-left:12px">
+        <button id="clear-preference" class="btn btn-ghost" style="padding:6px 10px;font-size:13px">Clear preference</button>
+      </div>
+    </nav>
     <main>
-      <section id="products" class="grid"></section>
+      <section id="products" class="grid">${productCardsHtml}</section>
     </main>
+    <script id="initial-products" type="application/json">${JSON.stringify(products[id] || [])}</script>
+
+  <!-- Toast container -->
+  <div id="toast" style="position:fixed;right:16px;bottom:80px;z-index:99999;display:none"></div>
+
+    <footer class="site-footer"><div class="inner"><div>Contact: <a href="mailto:info@thuso.example">info@thuso.example</a></div><div><a href="/">Back to MyStore</a> • <a href="/stores/${id}/cart">Your cart</a></div></div></footer>
   <div class="cartbar" id="cartbar">Cart: <span id="cart-count">0</span> • <button id="view-cart" class="brand-link">View</button></div>
 
     <!-- Modals -->
@@ -475,62 +734,16 @@ app.get('/stores/:id', (req, res) => {
         <button class="close" id="cart-close">✕</button>
         <h3>Your Cart</h3>
         <ul id="cart-list" class="cart-list"></ul>
-        <div style="margin-top:12px;text-align:right"><strong>Total: $<span id="cart-total">0.00</span></strong></div>
+  <div style="margin-top:12px;text-align:right"><strong>Total: BWP <span id="cart-total">0.00</span></strong></div>
         <div style="margin-top:12px;text-align:right"><button id="save-server">Save</button> <button id="do-checkout">Checkout</button></div>
       </div>
     </div>
 
     <script>
-      // Small helper to show/hide backdrops in a way that also controls visibility/pointer-events
-      function setBackdrop(id, on){
-        try{
-          var el = document.getElementById(id); if(!el) return;
-          if(on){ el.style.display = 'flex'; el.style.visibility = 'visible'; el.style.pointerEvents = 'auto'; }
-          else { el.style.display = 'none'; el.style.visibility = 'hidden'; el.style.pointerEvents = 'none'; }
-        }catch(e){}
-      }
-      // Defensive: ensure modal backdrops are hidden on initial load
-      document.addEventListener('DOMContentLoaded', function(){ try{ setBackdrop('modal-backdrop', false); setBackdrop('cart-backdrop', false); }catch(e){} });
-      const storeId = ${JSON.stringify(id)};
-      let products = [];
-      function saveCart(c){ localStorage.setItem('cart:'+storeId, JSON.stringify(c)); }
-      function loadCart(){ try{ return JSON.parse(localStorage.getItem('cart:'+storeId)) || {items:[]}; }catch(e){return {items:[]};} }
-      function updateCartUI(){ var c = loadCart(); var count = c.items.reduce(function(s,i){return s + (i.qty||0);}, 0); document.getElementById('cart-count').textContent = count; }
-      async function fetchProducts(){ var res = await fetch('/api/stores/' + storeId + '/products'); products = await res.json(); render(products); updateCartUI(); }
-    function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div class="name">'+ (it.name||'') +'</div><div class="desc">'+ (it.description||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div></div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
-  function render(list){ var out = ''; for(var i=0;i<list.length;i++){ var it = list[i]; var bulkHtml = ''; if(Array.isArray(it.bulkPricing) && it.bulkPricing.length){ bulkHtml = '<div class="bulk">'; for(var b=0;b<it.bulkPricing.length;b++){ var tier = it.bulkPricing[b]; bulkHtml += '<div class="tier">Buy '+tier.minQty+'+ @ $'+tier.price.toFixed(2)+'</div>'; } bulkHtml += '</div>'; } out += '<div class="card" data-id="'+it.id+'">' + '<div class="thumb" data-id="'+it.id+'" style="width:100%;height:96px;display:flex;align-items:center;justify-content:center">' + (it.image?('<img src="'+it.image+'" alt="'+(it.name||'')+'">'):'') + '</div>' + '<div class="meta"><div class="name">'+ (it.name||'') +'</div><div class="desc">'+ (it.description||'') +'</div><div class="price">$'+(typeof it.price==='number'?it.price.toFixed(2):it.price) +'</div>'+bulkHtml+'</div><div style="margin-top:8px"><button class="add" data-id="'+it.id+'">Add</button> <button class="view" data-id="'+it.id+'">View</button></div></div>'; } document.getElementById('products').innerHTML = out; bindAdd(); bindView(); }
-      function bindAdd(){ var buttons = document.querySelectorAll('.add'); for(var j=0;j<buttons.length;j++){ (function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var ex=null; for(var k=0;k<c.items.length;k++){ if(c.items[k].id===id) { ex=c.items[k]; break; } } if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); }; })(buttons[j]); } }
-      function bindView(){ var buttons = document.querySelectorAll('.view, .thumb'); for(var j=0;j<buttons.length;j++){ (function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); openProduct(id); }; })(buttons[j]); } }
-
-  function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p><p><button id="modal-add">Add to cart</button></p></div></div>'; setBackdrop('modal-backdrop', true); document.getElementById('modal-close').onclick = function(){ setBackdrop('modal-backdrop', false); }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); setBackdrop('modal-backdrop', false); } }
-  function openProduct(id){ var p = products.find(function(x){return x.id===id}); if(!p) return; var body = document.getElementById('modal-body'); var bulkHtml=''; if(Array.isArray(p.bulkPricing) && p.bulkPricing.length){ bulkHtml='<div class="bulk-modal"><strong>Bulk pricing:</strong><ul>'; for(var i=0;i<p.bulkPricing.length;i++){ var t=p.bulkPricing[i]; bulkHtml+='<li>Buy '+t.minQty+'+ @ $'+t.price.toFixed(2)+'</li>'; } bulkHtml+='</ul></div>'; } body.innerHTML = '<h2>'+ (p.name||'') +'</h2><div style="display:flex;gap:12px"><div style="flex:1">'+(p.image?'<img src="'+p.image+'" style="max-width:180px">':'')+'</div><div style="flex:2"><p>'+ (p.description||'') +'</p><p><strong>$'+(p.price?p.price.toFixed(2):'0.00')+'</strong></p>'+bulkHtml+'<p><button id="modal-add">Add to cart</button></p></div></div>'; setBackdrop('modal-backdrop', true); document.getElementById('modal-close').onclick = function(){ setBackdrop('modal-backdrop', false); }; document.getElementById('modal-body').querySelector('#modal-add').onclick = function(){ var c = loadCart(); var ex = c.items.find(function(i){return i.id===id}); if(ex) ex.qty+=1; else c.items.push({id:id,qty:1}); saveCart(c); updateCartUI(); setBackdrop('modal-backdrop', false); } }
-
-      document.getElementById('q').addEventListener('input', function(e){ var q = e.target.value.toLowerCase(); render(products.filter(function(p){ return p.name.toLowerCase().includes(q) || (p.category||'').toLowerCase().includes(q); })); });
-      document.getElementById('view-cart').addEventListener('click', function(){ showCart(); });
-  document.getElementById('cart-close').onclick = function(){ setBackdrop('cart-backdrop', false); };
-
-  async function showCart(){ var c = loadCart(); var list = document.getElementById('cart-list'); list.innerHTML=''; var total=0; if (!c.items.length){ document.getElementById('cart-total').textContent = '0.00'; setBackdrop('cart-backdrop', true); return; }
-        // batch price lookups per unique product
-        var lookups = {};
-        for(var i=0;i<c.items.length;i++){ lookups[c.items[i].id] = true; }
-        var prices = {};
-        var ids = Object.keys(lookups);
-        await Promise.all(ids.map(async function(pid){ try{ var r = await fetch('/api/stores/'+storeId+'/price?productId='+encodeURIComponent(pid)+'&qty=1'); if(r.ok){ var j = await r.json(); prices[pid] = j.unitPrice; } }catch(e){} }));
-        for(var i=0;i<c.items.length;i++){ var it = c.items[i]; var prod = products.find(function(p){return p.id===it.id}) || {name:it.id}; var unit = typeof prices[it.id]==='number'? prices[it.id] : (prod.price||0); var line = (unit||0) * (it.qty||0); total += line; var li = document.createElement('li'); li.innerHTML = '<div>'+(prod.name||it.id)+' <small style="color:#666">x'+(it.qty||0)+'</small></div><div>$'+ line.toFixed(2) +' <small style="color:#666">( $'+unit.toFixed(2)+'/ea )</small> <button class="inc" data-id="'+it.id+'">+</button> <button class="dec" data-id="'+it.id+'">-</button> <button class="rm" data-id="'+it.id+'">Remove</button></div>'; list.appendChild(li); }
-        document.getElementById('cart-total').textContent = total.toFixed(2);
-        // bind inc/dec/rm
-        Array.from(document.querySelectorAll('#cart-list .inc')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = (it.qty||0)+1; saveCart(c); showCart(); updateCartUI(); } }; });
-        Array.from(document.querySelectorAll('#cart-list .dec')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = Math.max(0, (it.qty||0)-1); if(it.qty===0){ c.items = c.items.filter(function(x){return x.id!==id}); } saveCart(c); showCart(); updateCartUI(); } }; });
-        Array.from(document.querySelectorAll('#cart-list .rm')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); c.items = c.items.filter(function(x){return x.id!==id}); saveCart(c); showCart(); updateCartUI(); }; });
-  setBackdrop('cart-backdrop', true);
-      }
-
-  document.getElementById('save-server').onclick = async function(){ var c=loadCart(); const res = await fetch('/api/stores/'+storeId+'/cart',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ items: c.items })}); if(res.ok) alert('Saved server-side'); else alert('Save failed'); };
-
-      document.getElementById('do-checkout').onclick = async function(){ var c=loadCart(); if(!c.items.length) return alert('Cart empty'); var res = await fetch('/api/stores/'+storeId+'/checkout',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ items: c.items, payment: { token: 'tok_test' } })}); if(res.ok){ var order = await res.json(); localStorage.removeItem('cart:'+storeId); window.location = '/stores/' + storeId + '/orders/' + order.id; } else { var text = await res.json(); alert('Checkout failed: ' + (text && text.error || 'unknown')); } };
-
-  fetchProducts();
+      // Small boot: inject the current store id and load the external client script
+      window.__storeId = ${JSON.stringify(id)};
     </script>
+    <script src="/store.js"></script>
   </body>
   </html>`;
 
@@ -538,11 +751,19 @@ app.get('/stores/:id', (req, res) => {
   // (no debug logs)
 });
 
+// Append footer to the rendered HTML by injecting before closing body in the store route
+// (we keep footer simple and informational)
+// Note: this appends a small footer via string concat in the store HTML above when sending the response.
+
 // Cart page — shows client cart and can save to server
 app.get('/stores/:id/cart', (req, res) => {
   const id = req.params.id;
   const store = stores.find(s => s.id === id || s.slug === id);
-  if (!store) return res.status(404).send('<h1>Store not found</h1>');
+  if (!store) {
+    const available = stores.map(s => `<li><a href="/stores/${s.id}">${s.name} — /stores/${s.id}</a></li>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Store not found</title><link rel="stylesheet" href="/styles.css"></head><body><main style="padding:18px"><h1>Store not found</h1><p>No store found for "${id}".</p><p>Available stores:</p><ul>${available}</ul><p><a href="/">Back home</a></p></main></body></html>`;
+    return res.status(404).send(html);
+  }
 
   const html = `<!doctype html>
   <html>
@@ -558,35 +779,12 @@ app.get('/stores/:id/cart', (req, res) => {
       <div id="cart-contents">Loading cart…</div>
       <div style="margin-top:12px"><button id="save">Save cart to server</button></div>
     </main>
+    <!-- Toast container for cart page -->
+    <div id="cart-toast" style="position:fixed;right:16px;bottom:80px;z-index:99999;display:none"></div>
     <script>
-      const storeId = ${JSON.stringify(id)};
-      function loadCart(){ try{ return JSON.parse(localStorage.getItem('cart:'+storeId)) || {items:[]}; }catch(e){return {items:[]};} }
-      async function render(){ const c = loadCart(); if(!c.items.length){ document.getElementById('cart-contents').textContent = 'Cart is empty'; return; }
-        // fetch product catalog to resolve names and default prices
-        var res = await fetch('/api/stores/' + storeId + '/products'); var catalog = [];
-        if (res.ok) catalog = await res.json();
-        // for each line, ask server for the unit price for the qty
-        var lines = await Promise.all(c.items.map(async function(it){ var r = await fetch('/api/stores/'+storeId+'/price?productId='+encodeURIComponent(it.id)+'&qty='+encodeURIComponent(it.qty||0)); if(r.ok){ var j = await r.json(); return { id: it.id, qty: it.qty, unitPrice: j.unitPrice, lineTotal: j.lineTotal, name: (catalog.find(p=>p.id===it.id) || {}).name || it.id }; } return { id: it.id, qty: it.qty, unitPrice: 0, lineTotal: 0, name: it.id }; }));
-        var total = lines.reduce((s,l)=>s+(l.lineTotal||0),0);
-        var out = '<ul>' + lines.map(l=>'<li>'+l.name+' x'+l.qty+' — $'+(l.lineTotal||0).toFixed(2)+' <small>( $'+(l.unitPrice||0).toFixed(2)+'/ea )</small></li>').join('') + '</ul><div style="margin-top:12px"><strong>Total: $'+ total.toFixed(2) +'</strong></div>';
-        document.getElementById('cart-contents').innerHTML = out;
-      }
-      document.getElementById('save').addEventListener('click', async ()=>{
-        const c = loadCart();
-        const res = await fetch('/api/stores/' + storeId + '/cart', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: c.items }) });
-        if (res.ok) alert('Saved'); else alert('Save failed');
-      });
-      // Checkout: post order and redirect to confirmation
-      document.getElementById('save').insertAdjacentHTML('afterend', '<button id="checkout" style="margin-left:12px">Checkout</button>');
-      document.getElementById('checkout').addEventListener('click', async ()=>{
-        const c = loadCart();
-        if (!c.items.length) return alert('Cart empty');
-        const total = c.items.reduce((s,i)=>s + ((i.qty||0) * 1), 0); // sample total calculation (replace with prices)
-        const res = await fetch('/api/stores/' + storeId + '/orders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: c.items, total }) });
-        if (res.ok){ const order = await res.json(); localStorage.removeItem('cart:'+storeId); window.location = '/stores/' + storeId + '/orders/' + order.id; } else { alert('Checkout failed'); }
-      });
-      render();
+      window.__storeId = ${JSON.stringify(id)};
     </script>
+    <script src="/cart.js"></script>
   </body>
   </html>`;
 
@@ -616,9 +814,9 @@ app.get('/stores/:id/orders/:orderId', (req, res) => {
       <p>Your order was placed on ${order.createdAt}.</p>
       <h3>Items</h3>
       <ul>
-        ${order.items.map(i => `<li>${i.name} — ${i.qty} × $${(i.price||0).toFixed(2)} = $${(i.lineTotal||0).toFixed(2)}</li>`).join('')}
+        ${order.items.map(i => `<li>${i.name} — ${i.qty} × BWP ${(i.price||0).toFixed(2)} = BWP ${(i.lineTotal||0).toFixed(2)}</li>`).join('')}
       </ul>
-      <h3>Total: $${(order.total||0).toFixed(2)}</h3>
+      <h3>Total: BWP ${(order.total||0).toFixed(2)}</h3>
       <p><a href="/stores/${id}">Back to store</a></p>
     </main>
   </body>

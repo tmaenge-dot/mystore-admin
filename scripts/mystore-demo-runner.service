@@ -1,0 +1,22 @@
+[Unit]
+Description=MyStore Demo Runner (start app + tunnel)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/oem/mystore/mystore-admin
+EnvironmentFile=/home/oem/mystore/mystore-admin/.env
+ExecStart=/bin/sh -c 'while true; do ./scripts/demo-runner.sh mystore-demo-xyz || true; sleep 5; done'
+StandardOutput=append:/home/oem/mystore/mystore-admin/logs/demo-runner.log
+StandardError=append:/home/oem/mystore/mystore-admin/logs/demo-runner.err.log
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+
+# To enable for the current user:
+# mkdir -p ~/.config/systemd/user
+# cp scripts/mystore-demo-runner.service ~/.config/systemd/user/mystore-demo-runner.service
+# systemctl --user daemon-reload
+# systemctl --user enable --now mystore-demo-runner.service
