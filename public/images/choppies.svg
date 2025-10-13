@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" viewBox="0 0 240 80">
+  <rect width="240" height="80" rx="12" fill="#e53935" />
+  <g fill="#ffffff" font-family="Arial,Helvetica,sans-serif" font-weight="700">
+    <text x="20" y="48" font-size="36">Choppies</text>
+  </g>
+</svg>
