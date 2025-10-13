@@ -608,9 +608,24 @@ app.post('/api/stores/:id/checkout', (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
   if (!body || !Array.isArray(body.items)) return res.status(400).json({ error: 'order items required' });
-  // very small simulated payment validation: accept if payment.token === 'tok_test' or no payment provided (demo)
+  // simulated payment validation: accept a small set of demo payment methods
   const payment = body.payment || {};
-  if (payment.token && payment.token !== 'tok_test') return res.status(402).json({ error: 'payment declined' });
+  // supported demo methods
+  const SUPPORTED_METHODS = new Set(['credit_card','debit_card','myzaka','orange_money','smega']);
+  // supported delivery methods
+  const SUPPORTED_DELIVERY = new Set(['store_transport','yango','cab','self']);
+  // If no payment provided, treat as demo (accept)
+  if (payment && payment.method){
+    // If token is present, accept only the test token; otherwise, for some methods accept without token for demo
+    if (payment.token && payment.token !== 'tok_test') return res.status(402).json({ error: 'payment declined' });
+    if (!SUPPORTED_METHODS.has(payment.method)) return res.status(400).json({ error: 'unsupported payment method' });
+  }
+  // delivery method validation (optional)
+  let deliveryMethod = 'self';
+  if (body.delivery && body.delivery.method){
+    if (!SUPPORTED_DELIVERY.has(body.delivery.method)) return res.status(400).json({ error: 'unsupported delivery method' });
+    deliveryMethod = body.delivery.method;
+  }
 
   const storeProducts = products[id] || [];
   // server-side bulk pricing applied at checkout too
@@ -625,7 +640,7 @@ app.post('/api/stores/:id/checkout', (req, res) => {
     return { id: it.id, name: p.name, price: unitPrice, qty, lineTotal: unitPrice * qty };
   });
   const total = enriched.reduce((s, i) => s + (i.lineTotal || 0), 0);
-  const order = { id: Date.now().toString(36), items: enriched, total, createdAt: new Date().toISOString() };
+  const order = { id: Date.now().toString(36), items: enriched, total, createdAt: new Date().toISOString(), delivery: { method: deliveryMethod } };
   db.addOrder(id, order);
   res.status(201).json(order);
 });

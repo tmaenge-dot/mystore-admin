@@ -90,11 +90,44 @@
     setBackdrop('cart-backdrop', true);
   }
 
+  // Insert basic payment selector into cart modal when showing cart
+  function ensurePaymentControls(){ try{
+    var cartModal = document.getElementById('cart-modal'); if(!cartModal) return;
+    if (document.getElementById('payment-controls')) return; // already added
+    var container = document.createElement('div'); container.id = 'payment-controls'; container.style.marginTop = '12px';
+  container.innerHTML = '<h4>Payment</h4><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label><input type="radio" name="pay_method" value="credit_card" checked> Credit Card</label><label><input type="radio" name="pay_method" value="debit_card"> Debit Card</label><label><input type="radio" name="pay_method" value="myzaka"> Myzaka</label><label><input type="radio" name="pay_method" value="orange_money"> Orange Money</label><label><input type="radio" name="pay_method" value="smega"> Smega</label></div><div style="margin-top:8px"><label>Payment token (demo): <input id="payment-token" placeholder="tok_test"></label></div><hr><h4>Delivery</h4><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label><input type="radio" name="delivery_method" value="store_transport" checked> Store transport</label><label><input type="radio" name="delivery_method" value="yango"> Yango</label><label><input type="radio" name="delivery_method" value="cab"> Cab</label><label><input type="radio" name="delivery_method" value="self"> Self (pickup)</label></div>';
+    // insert before the action buttons (save/checkout)
+    var actions = cartModal.querySelector('div[style*="text-align:right"]'); if(actions && actions.parentNode){ actions.parentNode.insertBefore(container, actions); }
+  }catch(e){}
+  }
+
   function showToast(msg, timeout=3000){ try{ var t = document.getElementById('toast'); if(!t) return; var el = document.createElement('div'); el.style.background='#0f172a'; el.style.color='#fff'; el.style.padding='10px 14px'; el.style.borderRadius='8px'; el.style.marginTop='8px'; el.style.boxShadow='0 8px 24px rgba(2,6,23,0.2)'; el.textContent = msg; t.appendChild(el); t.style.display='block'; setTimeout(function(){ try{ el.remove(); if(!t.children.length) t.style.display='none'; }catch(e){} }, timeout); }catch(e){} }
 
   var saveServerBtn = document.getElementById('save-server'); if(saveServerBtn) saveServerBtn.onclick = async function(){ var c=loadCart(); const res = await fetch('/api/stores/'+storeId+'/cart',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ items: c.items })}); if(res.ok) showToast('Saved server-side'); else showToast('Save failed'); };
 
-  var doCheckoutBtn = document.getElementById('do-checkout'); if(doCheckoutBtn) doCheckoutBtn.onclick = async function(){ var c=loadCart(); if(!c.items.length){ showToast('Cart empty'); return; } var res = await fetch('/api/stores/'+storeId+'/checkout',{method:'POST',headers:{'Content-Type':'application/json'}, body:JSON.stringify({ items: c.items, payment: { token: 'tok_test' } })}); if(res.ok){ var order = await res.json(); localStorage.removeItem('cart:'+storeId); window.location = '/stores/' + storeId + '/orders/' + order.id; } else { var text = await res.json(); showToast('Checkout failed: ' + (text && text.error || 'unknown')); } };
+  var doCheckoutBtn = document.getElementById('do-checkout');
+  if(doCheckoutBtn) {
+    // original simple handler replaced by a richer handler that reads payment controls
+    doCheckoutBtn.addEventListener('click', async function(ev){
+      ev.preventDefault();
+      var c = loadCart(); if(!c.items.length){ showToast('Cart empty'); return; }
+      // make sure payment controls are present for user to select method/token
+      ensurePaymentControls();
+  var methodEl = document.querySelector('input[name="pay_method"]:checked');
+  var method = methodEl ? methodEl.value : 'credit_card';
+  var tokenInput = document.getElementById('payment-token');
+  var token = tokenInput ? tokenInput.value.trim() : '';
+  var deliveryEl = document.querySelector('input[name="delivery_method"]:checked');
+  var deliveryMethod = deliveryEl ? deliveryEl.value : 'self';
+  var payment = { method: method };
+  if (token && token.length) payment.token = token;
+      try{
+  var res = await fetch('/api/stores/'+storeId+'/checkout', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ items: c.items, payment: payment, delivery: { method: deliveryMethod } }) });
+        if (res.ok){ var order = await res.json(); localStorage.removeItem('cart:'+storeId); window.location = '/stores/' + storeId + '/orders/' + order.id; }
+        else { var j = await res.json().catch(()=>({error:'unknown'})); showToast('Checkout failed: ' + (j && j.error || 'unknown')); }
+      }catch(e){ showToast('Checkout failed: network error'); }
+    });
+  }
 
   // Start by fetching products and updating UI
   try{ fetchProducts(); }catch(e){}
