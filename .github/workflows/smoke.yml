@@ -1,0 +1,68 @@
+name: Smoke test - store
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 2 * * *' # nightly at 02:00 UTC
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  smoke-store:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        store: [ choppies, thuso, sefalana ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm ci
+      - name: Start server (background)
+        run: |
+          npm start &>/tmp/mystore.log &
+          PID=$!
+          echo $PID > ./mystore.pid
+          echo "server-pid=$PID" >> $GITHUB_OUTPUT
+        env:
+          NODE_ENV: test
+      - name: Wait for server
+        run: |
+          for i in {1..20}; do
+            if curl -sS http://localhost:5000/ >/dev/null 2>&1; then echo "up"; exit 0; fi; sleep 1; done
+          echo "Server did not start" >&2; exit 1
+      - name: Run smoke script
+        run: ./scripts/smoke-store.sh ${{ matrix.store }}
+        env:
+          BASE: http://localhost:5000
+      - name: Dump server log (for debugging)
+        if: failure()
+        run: tail -n +1 /tmp/mystore.log | sed -n '1,200p'
+      - name: Upload logs (artifact)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mystore-log-${{ matrix.store }}
+          path: /tmp/mystore.log
+      - name: Cleanup server
+        if: always()
+        run: |
+          echo "Killing server PID from output..."
+          PID_FILE="/home/runner/work/${{ github.repository }}/_temp/mystore.pid"
+          # Try to read PID from job output first
+          PID=$(jq -r '."server-pid" // empty' $GITHUB_OUTPUT 2>/dev/null || true)
+          if [ -n "$PID" ]; then
+            echo "Killing PID $PID" || true
+            kill $PID || true
+          else
+            # Fallback: try to kill node processes listening on port 5000
+            pids=$(lsof -ti:5000 || true)
+            if [ -n "$pids" ]; then
+              echo "Killing pids: $pids" || true
+              kill $pids || true
+            fi
+          fi

@@ -46,6 +46,10 @@ const products = {
     { id: 'w1', name: 'Bananas', price: 1.6, image: '', category: 'Produce' },
     { id: 'w2', name: 'Yogurt', price: 1.9, image: '', category: 'Dairy' }
   ]
+  ,
+  sefalana: [
+    { id: 's1', name: 'Cooking Oil 2L', price: 8.5, image: '/images/sefalana.png', category: 'Oils', description: 'Everyday cooking oil' }
+  ]
 };
 
 export default products;

@@ -22,3 +22,8 @@ How to run
 - Apply regeneration: `node scripts/regenerate-brand-variants.js --percent 20`
 
 If you'd like, I can create a git commit and tag this release. Let me know if you want me to commit now and what commit message to use (default: "chore: perceptual branding + admin contrast checks").
+
+Commits
+ - f5b4c2567566fb2ac7ca15d29d6e8ab38e5e152c — chore(perceptual-branding): perceptual brand variants, admin contrast checks, and regeneration tooling
+	 - Author: Dev Bot
+	 - Committed: Oct 13, 2025
