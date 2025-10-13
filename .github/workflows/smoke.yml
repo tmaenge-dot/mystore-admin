@@ -1,0 +1,33 @@
+name: Smoke test - store
+
+on:
+  push:
+    branches: [ main, feature/* ]
+  pull_request:
+
+jobs:
+  smoke-store:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm ci
+      - name: Start server (background)
+        run: |
+          npm start &>/tmp/mystore.log &
+          PID=$!
+          echo "server-pid=$PID" >> $GITHUB_OUTPUT
+      - name: Wait for server
+        run: |
+          for i in {1..10}; do
+            if curl -sS http://localhost:5000/ >/dev/null 2>&1; then echo "up"; exit 0; fi; sleep 1; done
+          echo "Server did not start" >&2; exit 1
+      - name: Run smoke script
+        run: ./scripts/smoke-store.sh
+      - name: Dump server log (for debugging)
+        if: failure()
+        run: tail -n +1 /tmp/mystore.log | sed -n '1,200p'
