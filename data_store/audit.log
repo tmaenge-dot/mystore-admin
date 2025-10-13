@@ -353,3 +353,13 @@
 {"ts":"2025-10-13T09:13:35.397Z","action":"set_image","store":"upload_int_store","user":"admin","productId":"p1","file":"/images/apple.svg"}
 {"ts":"2025-10-13T09:13:35.404Z","action":"delete_image","store":"upload_e2e_store","user":"admin","productId":"p1"}
 {"ts":"2025-10-13T09:13:35.520Z","action":"delete_image","store":"upload_int_store","user":"admin","productId":"p1"}
+{"ts":"2025-10-13T09:29:19.440Z","action":"set_brand","store":"branding_e2e_store","user":"admin","brand":{"brandColor":"#1a2b3c","logo":"/images/9404f4dc-db62-4b47-a2be-51d6ae555aed.svg","textColor":""}}
+{"ts":"2025-10-13T09:29:19.509Z","action":"set_image","store":"upload_int_store","user":"admin","productId":"p1","file":"/images/apple.svg"}
+{"ts":"2025-10-13T09:29:19.604Z","action":"delete_image","store":"upload_int_store","user":"admin","productId":"p1"}
+{"ts":"2025-10-13T09:29:19.642Z","action":"set_image","store":"upload_e2e_store","user":"admin","productId":"p1","file":"/images/67d7a5eb-9601-4729-b449-7622c7144583.svg"}
+{"ts":"2025-10-13T09:29:19.656Z","action":"delete_image","store":"upload_e2e_store","user":"admin","productId":"p1"}
+{"ts":"2025-10-13T14:55:10.126Z","action":"set_image","store":"upload_int_store","user":"admin","productId":"p1","file":"/images/apple.svg"}
+{"ts":"2025-10-13T14:55:10.155Z","action":"set_brand","store":"branding_e2e_store","user":"admin","brand":{"brandColor":"#1a2b3c","logo":"/images/8d72dbf3-c968-42f1-8b06-0da3e1857675.svg","textColor":""}}
+{"ts":"2025-10-13T14:55:10.257Z","action":"set_image","store":"upload_e2e_store","user":"admin","productId":"p1","file":"/images/acb42880-bbe8-4fcd-9aeb-192541fcba50.svg"}
+{"ts":"2025-10-13T14:55:10.282Z","action":"delete_image","store":"upload_int_store","user":"admin","productId":"p1"}
+{"ts":"2025-10-13T14:55:10.297Z","action":"delete_image","store":"upload_e2e_store","user":"admin","productId":"p1"}
