@@ -1,0 +1,25 @@
+[Unit]
+Description=LocalTunnel for MyStore demo
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/home/oem/mystore/mystore-admin/.env
+Environment=LT_DIR=/tmp/lt
+Environment=SUBDOMAIN=mystore-demo-xyz
+WorkingDirectory=/home/oem/mystore/mystore-admin
+# Log to repository-local logs directory (systemd will create/append)
+StandardOutput=append:/home/oem/mystore/mystore-admin/logs/tunnel.log
+StandardError=append:/home/oem/mystore/mystore-admin/logs/tunnel.err.log
+ExecStart=/bin/sh -c 'exec /usr/bin/env node "$LT_DIR/node_modules/localtunnel/bin/lt.js" --port 5001 --subdomain "$SUBDOMAIN"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+
+# To enable for the current user:
+# mkdir -p ~/.config/systemd/user
+# cp scripts/mystore-tunnel.service ~/.config/systemd/user/mystore-tunnel.service
+# systemctl --user daemon-reload
+# systemctl --user enable --now mystore-tunnel.service

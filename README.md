@@ -175,3 +175,146 @@ After running compose, you can run a small smoke test that polls the health endp
 # or override host/port:
 ./scripts/compose-smoke.sh localhost 5001
 ```
+
+Tunnel (localtunnel) usage
+--------------------------
+
+For quick remote demos you can expose the running local server with `localtunnel`.
+This repo includes small helpers and a systemd user unit template under `scripts/`.
+
+Start the tunnel (from the repo root):
+
+```bash
+./scripts/tunnel-start.sh mystore-demo-xyz
+```
+
+This will:
+- start the `localtunnel` CLI installed under `/tmp/lt` (see the script for install steps)
+- write the tunnel pid to `/tmp/lt.pid`
+- capture CLI logs to `/tmp/lt_run_bg.log`
+
+Stop the tunnel:
+
+```bash
+./scripts/tunnel-stop.sh
+```
+
+Systemd user unit (optional)
+----------------------------
+If you want the tunnel to start automatically for your user, copy the provided service
+template to your user systemd directory and enable it:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp scripts/mystore-tunnel.service ~/.config/systemd/user/mystore-tunnel.service
+systemctl --user daemon-reload
+systemctl --user enable --now mystore-tunnel.service
+```
+
+Notes & security
+----------------
+- The tunnel exposes your local app to the public internet. Avoid using production data while the tunnel is active.
+- The demo admin UI still uses session cookies and CSRF protection, but treat the public URL as sensitive during demos.
+- When finished, stop the tunnel with `./scripts/tunnel-stop.sh` or `systemctl --user stop mystore-tunnel.service`.
+- If you need a more featureful/protected tunnel (TLS, auth, replay protection), consider using `ngrok` with an account and authtoken instead.
+
+Demo runner
+-----------
+
+For a one-command demo startup (start the server if needed, start the tunnel, and print the public URL):
+
+```bash
+./scripts/demo-runner.sh mystore-demo-xyz
+# Optionally auto-stop after N minutes:
+./scripts/demo-runner.sh mystore-demo-xyz --auto-stop 15
+```
+
+This helper avoids requiring tokens or external accounts; it relies on the local `localtunnel` install under `/tmp/lt` and the included start/stop scripts.
+
+Env helper
+----------
+
+A small helper is included to manage the repo `.env` used by the systemd user services (`mystore-tunnel.service` and `mystore-demo-runner.service`). The script edits or sets variables and restarts the services for you.
+
+Location: `scripts/env-edit.sh`
+
+Usage examples:
+
+```bash
+# show current values
+./scripts/env-edit.sh --print
+
+# open $EDITOR to edit .env (creates from .env.template if missing)
+./scripts/env-edit.sh --edit
+
+# set values non-interactively and restart services
+./scripts/env-edit.sh --set SUBDOMAIN=newsub
+./scripts/env-edit.sh SUBDOMAIN=newsub LT_DIR=/tmp/lt
+```
+
+The `.env.template` in the repo shows the defaults. After changes are applied the tunnel and demo-runner services are restarted automatically.
+
+Troubleshooting
+---------------
+Short tips to help when something goes wrong with the local demo, tunnel, or services.
+
+- Tunnel shows "Tunnel Unavailable" / 503 interstitial:
+	- The loca.lt interstitial may appear for browser visits. The tunnel password is the public IP of the machine running the localtunnel client. On the tunnel host run:
+		```bash
+		curl https://loca.lt/mytunnelpassword
+		```
+		Paste that value into the interstitial's password field. To bypass programmatically, send the header `Bypass-Tunnel-Reminder: 1` or a non-standard User-Agent.
+
+- Public tunnel returns 503 or stops intermittently:
+	- Check the local tunnel client process and logs:
+		```bash
+		# pidfile and log used by scripts
+		cat /tmp/lt.pid
+		tail -n 200 /tmp/lt_run_bg.log
+		```
+	- If the client crashed, restart it:
+		```bash
+		./scripts/tunnel-start.sh <subdomain>
+		```
+	- The repo includes a systemd user service that will restart the client automatically: `mystore-tunnel.service`.
+
+- Systemd service won't start or shows "Invalid environment variable" / "bad option: --port":
+	- This usually means ExecStart tried to use unexpanded variables. We patched the unit to use a shell wrapper and added `EnvironmentFile=/path/to/.env`. If you edit the service file, run:
+		```bash
+		systemctl --user daemon-reload
+		systemctl --user restart mystore-tunnel.service
+		journalctl --user -u mystore-tunnel.service -n 200 --no-pager
+		```
+
+- App not reachable on expected port (tests failing or curl can't connect):
+	- The managed server in this workspace runs on port `5001` by default (systemd unit uses PORT=5001). If your scripts expect `5000`, either start the server locally with `npm start` or update the scripts to use the correct port.
+
+- localtunnel not installed or executable errors:
+	- The helper scripts expect a local install under `/tmp/lt`. To install:
+		```bash
+		mkdir -p /tmp/lt && cd /tmp/lt && npm init -y && npm i localtunnel@2.0.2
+		```
+	- If you prefer not to install to /tmp, update `LT_DIR` in `.env` to point at your install and restart the tunnel service.
+
+- Logs and rotation:
+	- Service logs are written to `logs/tunnel.log` and `logs/demo-runner.log` inside the repo. If logs grow large, a user-level `logrotate` timer was added (check `logrotate-mystore.timer`). To run rotation immediately:
+		```bash
+		systemctl --user start logrotate-mystore.service
+		```
+
+- If services fail to restart after env edits:
+	- Confirm `.env` syntax (no stray characters) and restart the services:
+		```bash
+		./scripts/env-edit.sh --print
+		systemctl --user restart mystore-tunnel.service mystore-demo-runner.service
+		journalctl --user -u mystore-tunnel.service -n 100 --no-pager
+		```
+
+- Want to disable the public tunnel during development:
+	- Stop the tunnel and disable the service:
+		```bash
+		systemctl --user stop mystore-tunnel.service mystore-demo-runner.service
+		systemctl --user disable mystore-tunnel.service mystore-demo-runner.service
+		```
+
+If you hit a specific error message, tell me the exact text and I will diagnose it and propose a targeted fix.
