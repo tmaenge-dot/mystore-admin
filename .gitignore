@@ -1,0 +1,15 @@
+# Ignore runtime artifacts and logs
+/data_store/
+/logs/
+/server.output.log
+server.pid
+dev.output.log
+*.patch
+pr_payload.json
+.vscode/
+node_modules/
+/.env
+npm-debug.log*
+dist/
+/.sass-cache
+/.cache
