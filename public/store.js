@@ -87,6 +87,8 @@
     Array.from(document.querySelectorAll('#cart-list .inc')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = (it.qty||0)+1; saveCart(c); showCart(); updateCartUI(); } }; });
     Array.from(document.querySelectorAll('#cart-list .dec')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); var it = c.items.find(function(x){return x.id===id}); if(it){ it.qty = Math.max(0, (it.qty||0)-1); if(it.qty===0){ c.items = c.items.filter(function(x){return x.id!==id}); } saveCart(c); showCart(); updateCartUI(); } }; });
     Array.from(document.querySelectorAll('#cart-list .rm')).forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-id'); var c=loadCart(); c.items = c.items.filter(function(x){return x.id!==id}); saveCart(c); showCart(); updateCartUI(); }; });
+    // Ensure payment/delivery controls are visible when the cart opens
+    try{ ensurePaymentControls(); }catch(e){}
     setBackdrop('cart-backdrop', true);
   }
 
