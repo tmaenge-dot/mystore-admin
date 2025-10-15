@@ -4,6 +4,10 @@
 /server.output.log
 server.pid
 dev.output.log
+ /tmp/
+ *.sqlite
+ *.db
+ *.log
 *.patch
 pr_payload.json
 .vscode/
