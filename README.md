@@ -9,6 +9,23 @@ npm install
 npm run dev
 ```
 
+### Troubleshooting: port 5000 already in use
+
+If you see an error like:
+
+```
+Error: listen EADDRINUSE: address already in use 0.0.0.0:5000
+```
+
+It means another process is already listening on port 5000. Use the included helper to safely free the port and restart the server:
+
+```bash
+./scripts/restart-server.sh
+```
+
+This script will attempt to stop the process listening on port 5000, remove a stale `server.pid` if present, start the server in the background and print a short HTTP verification.
+
+
 Uploads
 -------
 
