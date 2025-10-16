@@ -1,0 +1,13 @@
+{
+  "watch": ["app.js", "server.js", "lib", "scripts", "data", "public/styles.css"],
+  "ignore": [
+    "data_store/*",
+    "logs/*",
+    "server.output.log",
+    "server.pid",
+    "public/images/*",
+    "*.sqlite",
+    "node_modules/*",
+    ".git/*"
+  ]
+}
