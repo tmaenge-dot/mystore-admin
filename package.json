@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
   "start": "node server.js",
-  "dev": "nodemon server.js",
+  "dev": "bash ./scripts/dev-safe.sh",
   "restart:server": "bash ./scripts/restart-server.sh",
     "smoke-store": "./scripts/smoke-store.sh",
     "test-api": "./scripts/test-api.sh",
