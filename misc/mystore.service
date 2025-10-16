@@ -1,0 +1,17 @@
+[Unit]
+Description=MyStore Admin Backend
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/mystore-admin
+ExecStart=/usr/bin/env node server.js
+Restart=on-failure
+RestartSec=5
+# Optional: adjust environment
+Environment=NODE_ENV=production
+Environment=PORT=5000
+
+[Install]
+WantedBy=multi-user.target
