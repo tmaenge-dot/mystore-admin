@@ -17,6 +17,13 @@ If you see an error like:
 Error: listen EADDRINUSE: address already in use 0.0.0.0:5000
 ```
 
+nodemon configuration
+---------------------
+
+This repository includes a `nodemon.json` file to prevent nodemon from restarting when runtime artifacts change (for example: files under `data_store/`, `logs/`, or `server.pid`). These files are written by the running server and can otherwise cause nodemon to restart repeatedly which leads to transient failures when the browser requests static assets like `/store.js`.
+
+If you want nodemon to watch additional directories, edit `nodemon.json` and restart nodemon (or run `npm run dev`).
+
 It means another process is already listening on port 5000. Use the included helper to safely free the port and restart the server:
 
 ```bash
