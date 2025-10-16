@@ -1,0 +1,12 @@
+{
+  "ignore": [
+    "data_store/*",
+    "logs/*",
+    "server.output.log",
+    "server.pid",
+    "public/images/*",
+    "*.sqlite",
+    "node_modules/*",
+    ".git/*"
+  ]
+}
