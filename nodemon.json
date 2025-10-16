@@ -1,4 +1,5 @@
 {
+  "watch": ["app.js", "server.js", "lib", "scripts", "data", "public/styles.css"],
   "ignore": [
     "data_store/*",
     "logs/*",
